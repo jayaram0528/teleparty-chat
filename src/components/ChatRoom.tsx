@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { TelepartyClient, SocketMessageTypes } from 'teleparty-websocket-lib';
 import { AppState, ChatMessage } from '../types/chat.types';
 
-
 interface ChatRoomProps {
   client: TelepartyClient | null;
   appState: AppState;
@@ -10,7 +9,6 @@ interface ChatRoomProps {
   typingUsers: string[];
   onSendMessage: (message: string) => void;
 }
-
 
 const ChatRoom: React.FC<ChatRoomProps> = ({
   client,
@@ -47,27 +45,24 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
   }, [messages]);
 
   /**
-   * ✅ FORMAT SYSTEM MESSAGES WITH USERNAME
+   * FORMAT SYSTEM MESSAGES WITH USERNAME
    */
   const formatSystemMessage = (msg: ChatMessage) => {
     const username = msg.userNickname || 'Someone';
-    
-    // Special handling for "left" message (no emoji from server)
+
     if (msg.body === 'left') {
       return `${username} left the party`;
     }
-    
-    // For messages that already have emojis (created/joined)
+
     if (msg.body.includes('created the party') || msg.body.includes('joined the party')) {
       return `${username} ${msg.body}`;
     }
-    
-    // Generic fallback
+
     return `${username} ${msg.body}`;
   };
 
   /**
-   * ✅ SEND MESSAGE
+   * SEND MESSAGE
    */
   const handleSendMessage = () => {
     if (!client || !messageInput.trim()) return;
@@ -83,31 +78,41 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
 
   /**
    * Typing presence handling (debounced)
+   * FIX: reset timer on every key press; send typing:true only once per typing session
    */
   const startTyping = () => {
-    if (!client || isTyping) return;
+    if (!client) return;
 
-    client.sendMessage(SocketMessageTypes.SET_TYPING_PRESENCE, { typing: true });
-    setIsTyping(true);
-
+    // Always reset debounce timer on each key press
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
+    // Only send typing:true once when we transition false -> true
+    if (!isTyping) {
+      client.sendMessage(SocketMessageTypes.SET_TYPING_PRESENCE, { typing: true });
+      setIsTyping(true);
+    }
+
+    // Stop typing after 3s of no input
     typingTimeoutRef.current = setTimeout(() => {
       stopTyping();
     }, 3000);
   };
 
   const stopTyping = () => {
-    if (!client || !isTyping) return;
+    if (!client) return;
 
-    client.sendMessage(SocketMessageTypes.SET_TYPING_PRESENCE, { typing: false });
-    setIsTyping(false);
-
+    // Clear timer
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
+    }
+
+    // Only send typing:false if we are currently in typing state
+    if (isTyping) {
+      client.sendMessage(SocketMessageTypes.SET_TYPING_PRESENCE, { typing: false });
+      setIsTyping(false);
     }
   };
 
@@ -135,17 +140,13 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
       minute: '2-digit'
     });
 
+  /**
+   * UPDATED: Typing text (generic, reliable)
+   * Teleparty notes that showing names isn't required; indicating typing is sufficient. [file:1]
+   */
   const getTypingText = () => {
-    if (typingUsers.length === 0) return '';
-
-    const names = typingUsers
-      .map(id => userNicknameMap.current.get(id))
-      .filter(name => name && name !== appState.nickname);
-
-    if (names.length === 0) return '';
-    if (names.length === 1) return `${names[0]} is typing...`;
-    if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
-    return `${names[0]} and ${names.length - 1} others are typing...`;
+    if (!typingUsers || typingUsers.length === 0) return '';
+    return 'Someone is typing...';
   };
 
   const copyRoomId = () => {
@@ -273,9 +274,9 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
           }}
           onKeyPress={handleKeyPress}
         />
-        <button 
+        <button
           className="send-button"
-          onClick={handleSendMessage} 
+          onClick={handleSendMessage}
           disabled={!messageInput.trim()}
         >
           Send

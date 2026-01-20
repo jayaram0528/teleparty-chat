@@ -33,6 +33,40 @@ function App() {
   const handleMessage = useCallback((message: any) => {
     console.log('📥 Received message:', message);
 
+    // ✅ DEBUG: check if server is sending MessageList (history)
+    if (message?.data?.messages) {
+      console.log('HISTORY LENGTH:', message.data.messages.length);
+    }
+
+    // ✅ Handle MessageList (history) from server when someone joins
+    // Teleparty mentions you may receive an object implementing MessageList with data.messages. [file:1]
+    if (Array.isArray(message.data?.messages)) {
+      console.log('📜 Loading previous messages');
+
+      setMessages(prev => {
+        const incoming = message.data.messages as ChatMessage[];
+
+        const makeKey = (m: ChatMessage) =>
+          m.messageId ?? `${m.permId}-${m.timestamp}-${m.body}`;
+
+        const seen = new Set(prev.map(makeKey));
+        const merged = [...prev];
+
+        for (const m of incoming) {
+          const key = makeKey(m);
+          if (!seen.has(key)) {
+            merged.push(m);
+            seen.add(key);
+          }
+        }
+
+        merged.sort((a, b) => a.timestamp - b.timestamp);
+        return merged;
+      });
+
+      return; // important: don't fall through into switch for history events
+    }
+
     switch (message.type) {
       case SocketMessageTypes.SEND_MESSAGE: {
         const chatMessage = message.data as ChatMessage;
@@ -53,11 +87,8 @@ function App() {
       }
 
       default: {
-        // Load previous messages on join
-        if (Array.isArray(message.data?.messages)) {
-          console.log('📜 Loading previous messages');
-          setMessages(message.data.messages);
-        }
+        // no-op
+        break;
       }
     }
   }, []);
@@ -73,11 +104,11 @@ function App() {
     }
 
     console.log('📤 Sending message to server:', messageBody);
-    
+
     try {
-      // Send ONLY body to server - server will add all other fields and broadcast
-      client.sendMessage(SocketMessageTypes.SEND_MESSAGE, { 
-        body: messageBody.trim() 
+      // Send ONLY body to server - server will add all other fields and broadcast [file:1]
+      client.sendMessage(SocketMessageTypes.SEND_MESSAGE, {
+        body: messageBody.trim()
       });
       console.log('✅ Message sent to server successfully');
     } catch (error) {
